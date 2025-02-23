@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>小红书风格瀑布流</title>
+    <!-- 引入 Vue 2 -->
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.7.14/dist/vue.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      .container {
+        padding: 12px;
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+
+      .waterfall {
+        display: flex;
+        gap: 12px;
+      }
+
+      .column {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .card {
+        break-inside: avoid;
+        margin-bottom: 12px;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s;
+        cursor: pointer;
+      }
+
+      .card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      }
+
+      .card-img {
+        width: 100%;
+        border-radius: 8px 8px 0 0;
+        display: block;
+        background: #f5f5f5;
+      }
+
+      .card-info {
+        padding: 12px;
+      }
+
+      .card-title {
+        font-size: 14px;
+        color: #333;
+        line-height: 1.4;
+        margin-bottom: 8px;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        overflow: hidden;
+      }
+
+      .user-info {
+        display: flex;
+        align-items: center;
+        font-size: 12px;
+        color: #666;
+      }
+
+      .avatar {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        margin-right: 8px;
+      }
+
+      .loading {
+        text-align: center;
+        padding: 20px;
+        color: #666;
+      }
+
+      @media (max-width: 768px) {
+        .waterfall {
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div class="container">
+        <div class="waterfall" :style="{ columns: columnCount }">
+          <div v-for="(column, index) in columns" :key="index" class="column">
+            <div v-for="item in column" :key="item.id" class="card">
+              <img
+                :src="item.image"
+                :alt="item.title"
+                class="card-img"
+                :style="{ height: item.height + 'px' }"
+              />
+              <div class="card-info">
+                <div class="card-title">{{ item.title }}</div>
+                <div class="user-info">
+                  <img :src="item.avatar" class="avatar" />
+                  <span>@{{ item.author }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-if="loading" class="loading">加载中...</div>
+      </div>
+    </div>
+
+    <script>
+      new Vue({
+        el: "#app",
+        data: {
+          columns: [[], [], [], []], // 四列布局
+          allItems: [],
+          loading: false,
+          page: 1,
+          columnCount: 4,
+          screenWidth: window.innerWidth,
+        },
+        mounted() {
+          this.loadItems();
+          window.addEventListener("resize", this.handleResize);
+          window.addEventListener("scroll", this.handleScroll);
+          this.handleResize(); // 初始化响应式列数
+        },
+        beforeDestroy() {
+          window.removeEventListener("resize", this.handleResize);
+          window.removeEventListener("scroll", this.handleScroll);
+        },
+        methods: {
+          handleResize() {
+            this.screenWidth = window.innerWidth;
+            this.columnCount = this.screenWidth < 768 ? 2 : 4;
+            this.redistributeItems();
+          },
+          async loadItems() {
+            this.loading = true;
+            // 模拟异步数据请求
+            await new Promise((resolve) => setTimeout(resolve, 800));
+
+            // 生成模拟数据
+            const newItems = Array.from({ length: 10 }, (_, i) => ({
+              id: this.allItems.length + i + 1,
+              title: this.generateRandomTitle(),
+              author: this.generateRandomName(),
+              image: `https://picsum.photos/300/400?random=${Math.random()}`,
+              avatar: `https://i.pravatar.cc/40?img=${Math.floor(
+                Math.random() * 70
+              )}`,
+              height: 400 + Math.floor(Math.random() * 200), // 随机高度
+            }));
+
+            this.allItems = [...this.allItems, ...newItems];
+            this.redistributeItems();
+            this.loading = false;
+          },
+          redistributeItems() {
+            const columns = Array.from({ length: this.columnCount }, () => []);
+            this.allItems.forEach((item, index) => {
+              columns[index % this.columnCount].push(item);
+            });
+            this.columns = columns;
+          },
+          handleScroll() {
+            const scrollBottom = window.innerHeight + window.scrollY;
+            const threshold = document.documentElement.offsetHeight - 100;
+
+            if (scrollBottom >= threshold && !this.loading) {
+              this.page++;
+              this.loadItems();
+            }
+          },
+          generateRandomTitle() {
+            const adjectives = [
+              "时尚",
+              "好看",
+              "实用",
+              "创意",
+              "精致",
+              "流行",
+              "独特",
+            ];
+            const nouns = [
+              "穿搭",
+              "好物",
+              "技巧",
+              "推荐",
+              "教程",
+              "心得",
+              "分享",
+            ];
+            return `${
+              adjectives[Math.floor(Math.random() * adjectives.length)]
+            }的${
+              nouns[Math.floor(Math.random() * nouns.length)]
+            } ${String.fromCodePoint(0x1f44c)}`;
+          },
+          generateRandomName() {
+            const names = [
+              "安娜",
+              "小美",
+              "莉莉",
+              "婷宝",
+              "萌酱",
+              "吃货",
+              "探店",
+            ];
+            const suffixes = [
+              "同学",
+              "日常",
+              "日记",
+              "笔记",
+              "分享",
+              "种草",
+              "合集",
+            ];
+            return (
+              names[Math.floor(Math.random() * names.length)] +
+              suffixes[Math.floor(Math.random() * suffixes.length)]
+            );
+          },
+        },
+      });
+    </script>
+  </body>
+</html>
