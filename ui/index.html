@@ -6,38 +6,102 @@
     <style>
       #chat-app {
         max-width: 600px;
-        margin: auto;
+        margin: 20px auto;
         padding: 20px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        border-radius: 8px;
       }
       .chat-window {
-        border: 1px solid #ccc;
-        margin-bottom: 10px;
-        padding: 10px;
-        height: 300px;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        height: 400px;
+        margin-bottom: 15px;
+        padding: 15px;
         overflow-y: auto;
+        background: #f8f9fa;
+      }
+      .message-box {
+        display: flex;
       }
       .message {
-        margin-bottom: 10px;
-        padding: 10px;
-        border-radius: 10px;
+        display: inline-block;
+        margin: 10px 0;
+        padding: 12px 16px;
+        border-radius: 15px;
+        word-break: break-word;
+        animation: fadeIn 0.3s ease-in;
       }
       .user {
-        background-color: #e1ffc7;
+        background: #d1e7dd;
         margin-left: auto;
-        width: fit-content;
+        border-bottom-right-radius: 3px;
       }
       .bot {
-        background-color: #f0f0f0;
-        margin-right: auto;
-        width: fit-content;
+        background: #ffffff;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        border-bottom-left-radius: 3px;
+        position: relative;
+      }
+      .loading::after {
+        content: "";
+        display: inline-block;
+        margin-left: 10px;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #666;
+        opacity: 0;
+        animation: typingDot 1.5s infinite;
+      }
+      .loading::before {
+        content: "···";
+        color: #666;
+        margin-left: 4px;
       }
       input {
-        width: 80%;
+        width: calc(100% - 90px);
         padding: 10px;
+        border: 1px solid #e0e0e0;
+        border-radius: 20px;
         margin-right: 10px;
+        outline: none;
+        transition: border-color 0.3s;
+      }
+      input:focus {
+        border-color: #4dabf7;
       }
       button {
-        padding: 10px 20px;
+        padding: 10px 25px;
+        background: #4dabf7;
+        border: none;
+        border-radius: 20px;
+        color: white;
+        cursor: pointer;
+        transition: background 0.3s;
+      }
+      button:hover {
+        background: #339af0;
+      }
+      @keyframes typingDot {
+        0% {
+          opacity: 0;
+        }
+        50% {
+          opacity: 1;
+        }
+        100% {
+          opacity: 0;
+        }
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
       }
     </style>
   </head>
@@ -45,22 +109,30 @@
     <div id="chat-app">
       <div class="chat-window">
         <div
+          class="message-box"
           v-for="(message, index) in messages"
           :key="index"
-          :class="['message', message.sender]"
         >
-          {{ message.text }}
+          <span
+            :class="['message', message.sender, { loading: message.loading }]"
+          >
+            {{ message.text }}</span
+          >
         </div>
       </div>
-      <input
-        v-model="inputMessage"
-        @keyup.enter="sendMessage"
-        placeholder="Type a message..."
-      />
-      <button @click="sendMessage">Send</button>
+      <div class="input-area">
+        <input
+          v-model="inputMessage"
+          @keyup.enter="sendMessage"
+          placeholder="Type your message..."
+          :disabled="isSending"
+        />
+        <button @click="sendMessage" :disabled="isSending">
+          {{ isSending ? 'Sending...' : 'Send' }}
+        </button>
+      </div>
     </div>
 
-    <!-- Include Vue from CDN -->
     <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.js"></script>
     <script>
       new Vue({
@@ -68,63 +140,86 @@
         data: {
           messages: [],
           inputMessage: "",
-          isBotTyping: false,
+          isSending: false,
+          currentBotMessage: null,
         },
         methods: {
-          sendMessage() {
-            if (this.inputMessage.trim() === "") return;
+          async sendMessage() {
+            if (!this.inputMessage.trim() || this.isSending) return;
 
-            // 添加用户消息
-            this.messages.push({ text: this.inputMessage, sender: "user" });
-
-            // 清空输入框
+            // 状态重置
+            this.isSending = true;
+            const userMessage = this.inputMessage;
             this.inputMessage = "";
 
-            // 标记为正在加载
-            this.isBotTyping = true;
+            // 添加用户消息
+            this.messages.push({
+              text: userMessage,
+              sender: "user",
+              timestamp: Date.now(),
+            });
 
-            // 发送请求到后端
-            fetch("http://localhost:3000/api/chat", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ message: this.inputMessage }),
-            })
-              .then((response) => {
-                const reader = response.body.getReader(); // 获取流式读取器
-                const botMessage = { text: "", sender: "bot" };
-                this.messages.push(botMessage);
+            // 添加初始机器人消息
+            const botMessage = {
+              text: "",
+              sender: "bot",
+              loading: true,
+              timestamp: Date.now(),
+            };
+            this.messages.push(botMessage);
+            this.currentBotMessage = botMessage;
 
-                // 逐字读取流
-                const readStream = () => {
-                  reader.read().then(({ done, value }) => {
-                    if (done) {
-                      this.isBotTyping = false; // 结束标记
-                      return;
+            try {
+              const response = await fetch(
+                "http://localhost:9527/chat/stream",
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ message: userMessage }),
+                }
+              );
+
+              if (!response.ok)
+                throw new Error(`HTTP error! status: ${response.status}`);
+
+              const reader = response.body
+                .pipeThrough(new TextDecoderStream())
+                .getReader();
+
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                value.split("\n").forEach((line) => {
+                  if (line.startsWith("data: ")) {
+                    const payload = line.slice(6).trim();
+                    if (payload === "[DONE]") return;
+
+                    try {
+                      const data = JSON.parse(payload);
+                      this.currentBotMessage.text += data.content;
+                      this.keepScrollBottom();
+                    } catch (e) {
+                      console.warn("Parse error:", e);
                     }
-
-                    // 将字节数据转换为字符串
-                    const text = new TextDecoder().decode(value);
-                    botMessage.text += text; // 逐字追加
-                    this.$nextTick(() => {
-                      const chatWindow = document.querySelector(".chat-window");
-                      chatWindow.scrollTop = chatWindow.scrollHeight; // 自动滚动到底部
-                    });
-
-                    readStream(); // 递归读取
-                  });
-                };
-
-                readStream();
-              })
-              .catch((error) => {
-                console.error("Error:", error);
-                this.messages.push({
-                  text: "Failed to get response",
-                  sender: "bot",
+                  }
                 });
-              });
+              }
+            } catch (error) {
+              console.error("Request failed:", error);
+              this.currentBotMessage.text =
+                "⚠️ Connection error: " + error.message;
+            } finally {
+              this.isSending = false;
+              this.currentBotMessage.loading = false;
+              this.keepScrollBottom();
+            }
+          },
+          keepScrollBottom() {
+            this.$nextTick(() => {
+              const container = this.$el.querySelector(".chat-window");
+              container.scrollTop = container.scrollHeight;
+            });
           },
         },
       });
