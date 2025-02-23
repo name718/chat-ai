@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>ChatGPT Stream Demo</title>
+    <style>
+      #chat-app {
+        max-width: 600px;
+        margin: auto;
+        padding: 20px;
+      }
+      .chat-window {
+        border: 1px solid #ccc;
+        margin-bottom: 10px;
+        padding: 10px;
+        height: 300px;
+        overflow-y: auto;
+      }
+      .message {
+        margin-bottom: 10px;
+        padding: 10px;
+        border-radius: 10px;
+      }
+      .user {
+        background-color: #e1ffc7;
+        margin-left: auto;
+        width: fit-content;
+      }
+      .bot {
+        background-color: #f0f0f0;
+        margin-right: auto;
+        width: fit-content;
+      }
+      input {
+        width: 80%;
+        padding: 10px;
+        margin-right: 10px;
+      }
+      button {
+        padding: 10px 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="chat-app">
+      <div class="chat-window">
+        <div
+          v-for="(message, index) in messages"
+          :key="index"
+          :class="['message', message.sender]"
+        >
+          {{ message.text }}
+        </div>
+      </div>
+      <input
+        v-model="inputMessage"
+        @keyup.enter="sendMessage"
+        placeholder="Type a message..."
+      />
+      <button @click="sendMessage">Send</button>
+    </div>
+
+    <!-- Include Vue from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.js"></script>
+    <script>
+      new Vue({
+        el: "#chat-app",
+        data: {
+          messages: [],
+          inputMessage: "",
+          isBotTyping: false,
+        },
+        methods: {
+          sendMessage() {
+            if (this.inputMessage.trim() === "") return;
+
+            // 添加用户消息
+            this.messages.push({ text: this.inputMessage, sender: "user" });
+
+            // 清空输入框
+            this.inputMessage = "";
+
+            // 标记为正在加载
+            this.isBotTyping = true;
+
+            // 发送请求到后端
+            fetch("http://localhost:3000/api/chat", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ message: this.inputMessage }),
+            })
+              .then((response) => {
+                const reader = response.body.getReader(); // 获取流式读取器
+                const botMessage = { text: "", sender: "bot" };
+                this.messages.push(botMessage);
+
+                // 逐字读取流
+                const readStream = () => {
+                  reader.read().then(({ done, value }) => {
+                    if (done) {
+                      this.isBotTyping = false; // 结束标记
+                      return;
+                    }
+
+                    // 将字节数据转换为字符串
+                    const text = new TextDecoder().decode(value);
+                    botMessage.text += text; // 逐字追加
+                    this.$nextTick(() => {
+                      const chatWindow = document.querySelector(".chat-window");
+                      chatWindow.scrollTop = chatWindow.scrollHeight; // 自动滚动到底部
+                    });
+
+                    readStream(); // 递归读取
+                  });
+                };
+
+                readStream();
+              })
+              .catch((error) => {
+                console.error("Error:", error);
+                this.messages.push({
+                  text: "Failed to get response",
+                  sender: "bot",
+                });
+              });
+          },
+        },
+      });
+    </script>
+  </body>
+</html>
